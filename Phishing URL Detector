@@ -1,0 +1,117 @@
+
+from urllib.parse import urlparse
+import ipaddress
+import re
+
+SHORTENERS = {
+    "bit.ly", "tinyurl.com", "t.co",
+    "is.gd", "cutt.ly", "shorturl.at"
+}
+
+
+def detect_phishing(url):
+    score = 0
+    warnings = []
+
+    # Parse the URL
+    candidate = url.strip()
+
+    if not candidate:
+        return 100, ["No URL was provided."]
+
+    if not re.match(r"^https?://", candidate, re.I):
+        candidate = "http://" + candidate
+
+    try:
+        parsed = urlparse(candidate)
+        host = parsed.hostname
+    except ValueError:
+        return 100, ["URL format is invalid."]
+
+    if not host:
+        return 100, ["No valid hostname was found."]
+
+    host = host.lower().rstrip(".")
+
+    # 1. HTTPS check
+    if parsed.scheme != "https":
+        score += 1
+        warnings.append("URL does not use HTTPS.")
+
+    # 2. IP address instead of a domain
+    try:
+        ipaddress.ip_address(host)
+        score += 3
+        warnings.append("Hostname is an IP address.")
+    except ValueError:
+        pass
+
+    # 3. Excessive URL length
+    if len(candidate) > 100:
+        score += 1
+        warnings.append("URL is unusually long.")
+
+    # 4. @ symbol can obscure the destination
+    if "@" in parsed.netloc:
+        score += 3
+        warnings.append("An @ symbol appears in the network location.")
+
+    # 5. Many subdomains
+    if len(host.split(".")) >= 5:
+        score += 2
+        warnings.append("Hostname has many domain labels.")
+
+    # 6. Suspicious terms in the URL
+    terms = re.findall(
+        r"login|verify|account|password|secure|update",
+        candidate,
+        re.I
+    )
+
+    if len(terms) >= 2:
+        score += 2
+        warnings.append(
+            "Several login or account-related terms appear in the URL."
+        )
+
+    # 7. Known URL shorteners
+    if host in SHORTENERS:
+        score += 2
+        warnings.append(
+            "URL uses a shortening service that hides the final destination."
+        )
+
+    score = min(score, 10)
+
+    return score, warnings
+
+
+def main():
+    print("=== Phishing URL Detector ===")
+    print("Educational tool: results are not definitive.")
+    url = input("Enter a URL to analyze: ").strip()
+
+    score, warnings = detect_phishing(url)
+
+    print(f"\nRisk indicator: {score}/10")
+
+    if score >= 6:
+        print("Result: HIGH RISK INDICATORS")
+    elif score >= 3:
+        print("Result: CAUTION")
+    else:
+        print("Result: FEW INDICATORS DETECTED")
+
+    if warnings:
+        print("\nFindings:")
+        for warning in warnings:
+            print("- " + warning)
+    else:
+        print("\nNo configured warning rules were triggered.")
+
+    print("\nImportant: A low score does not mean a URL is safe.")
+    print("Do not open suspicious links to test them.")
+
+
+if __name__ == "__main__":
+    main()
